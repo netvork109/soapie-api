@@ -1,10 +1,10 @@
 {
     "mongoDb": {
-        "server": "mongodb+srv://admin:IZ21b6JQiB82r5fV@soapie.lomp3.mongodb.net/myFirstDatabase?retryWrites=true&w=majority",
+        "server": "",
         "db": "soapie"
     },
     "keys": {
-        "public": "-----BEGIN PUBLIC KEY-----\nMFwwDQYJKoZIhvcNAQEBBQADSwAwSAJBAMhHwQHeLqW7CSy5WEDnoyiPIVDGmljW\n0rJtZnZBQgqHX6jGkojqr12tOySqGexfWyrvVOCuI9UA+c9HdO/7kuUCAwEAAQ==\n-----END PUBLIC KEY-----",
-        "private": "-----BEGIN RSA PRIVATE KEY-----\nMIIBOwIBAAJBAMhHwQHeLqW7CSy5WEDnoyiPIVDGmljW0rJtZnZBQgqHX6jGkojq\nr12tOySqGexfWyrvVOCuI9UA+c9HdO/7kuUCAwEAAQJAIip7doIcmxEpI4QK1iet\n4cFpAYqf0f/zuZSIIixHw9u+i+kjzmgV60kEd/KaVIvVbuD3Mqhs9wny2TwieU+A\nEQIhAPlqUiW2N4czAY4mIjaOad/l5fJztOid3+ev3gfM9MOPAiEAzZFaU+udiKCq\nZivj4tZC7FLnWzLSOMEu8xd3clMROEsCIQCpUvDqAUa5Vntb0a+wcgaWpjDx5HOQ\n6H01gUOu8AnLKQIgbYBF23ogukzLOA2dIJH9qCEpOD1EGhNdzQPtDqsM+y0CIQDK\nYUd+F7iA36Y6P9odI1R7Ls4sx0wpWYOiw73NYTyCQA==\n-----END RSA PRIVATE KEY-----"
+        "public": "",
+        "private": ""
     }
 }
