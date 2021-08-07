@@ -2,7 +2,7 @@ var app = require("express")(),
     bcrypt = require('bcrypt'),
     jwt = require("jsonwebtoken"),
     configuration = require("./configuration.json"),
-    { MongoClient } = require("mongodb");
+    { MongoClient, ObjectId } = require("mongodb");
 
 // online users
 const onlineUsers = [];
@@ -13,8 +13,9 @@ app.use(require("express").json())
     .use(async (req, res, next) => {
         req.startTime = Date.now() / 1000.0;
         res.generatedBaseContent = {
-            api: req.url.split("/")[2],
+            api: req.url.split("/")[2].split("?")[0],
             contents: [],
+            error: null,
             timeStatus: {
                 startTime: req.startTime
             },
@@ -41,23 +42,6 @@ app.get("/public/server-time", async (req, res) => {
 
 app.get("/public/catalog", async (req, res) => {
     MongoClient.connect(configuration.mongoDb.server, async (error, client) => {
-        if (error) {
-            res.generatedBaseContent.error = {
-                code: 1001,
-                message: "Cannot connect to database. Please, try later!",
-                errorRes: {
-                    name: error.name,
-                    message: error.message
-                }
-            };
-
-            res.generatedBaseContent.timeStatus.serverTime = Date.now() / 1000.0;
-            res.generatedBaseContent.timeStatus.generatedFor = (Date.now() / 1000.0) - req.startTime;
-
-            client.close()
-            return res.status(500).send(res.generatedBaseContent);
-        }
-        
         const collection = client.db(configuration.mongoDb.db).collection("content");
 
         res.generatedBaseContent.contents = await collection.find({ status: "VERIFIED_OK", public: true }).toArray();
@@ -72,23 +56,6 @@ app.get("/public/catalog", async (req, res) => {
 
 app.get("/public/stats", async (req, res) => {
     MongoClient.connect(configuration.mongoDb.server, async (error, client) => {
-        if (error) {
-            res.generatedBaseContent.error = {
-                code: 1001,
-                message: "Cannot connect to database. Please, try later!",
-                errorRes: {
-                    name: error.name,
-                    message: error.message
-                }
-            };
-
-            res.generatedBaseContent.timeStatus.serverTime = Date.now() / 1000.0;
-            res.generatedBaseContent.timeStatus.generatedFor = (Date.now() / 1000.0) - req.startTime;
-
-            client.close()
-            return res.status(500).send(res.generatedBaseContent);
-        }
-
         const contents = client.db(configuration.mongoDb.db).collection("content");
         let publicMaps = await contents.find({ status: "VERIFIED_OK", public: true }).toArray();
         let privateMaps = await contents.find({ public: false }).toArray();
@@ -117,6 +84,30 @@ app.get("/public/stats", async (req, res) => {
     })
 })
 
+app.post("/public/register", async (req, res) => {
+    MongoClient.connect(configuration.mongoDb.server, async (error, client) => {
+        req.body.password = await bcrypt.hash(req.body.password, 6);
+        req.body.contents = [];
+
+        req.body.deleted = false;
+
+        const collection = client.db(configuration.mongoDb.db).collection("users");
+        await collection.insertOne(req.body);
+        
+        res.generatedBaseContent.requestInfo.generatedJWTtoken = jwt.sign({
+            email: req.body.email,
+            password: req.body.password,
+            expiration: Date.now() + 10800000 // 3 hours will works
+        }, configuration.key)
+
+        res.generatedBaseContent.timeStatus.serverTime = Date.now() / 1000.0;
+        res.generatedBaseContent.timeStatus.generatedFor = (Date.now() / 1000.0) - req.startTime;
+
+        res.send(res.generatedBaseContent);
+        client.close();
+    })
+})
+
 // private functions of server
 
 app.use("/private/", async (req, res, next) => {
@@ -127,23 +118,6 @@ app.use("/private/", async (req, res, next) => {
                 const authorizationInfo = Buffer.from(authorization, "base64").toString("ascii").split(":");
 
                 MongoClient.connect(configuration.mongoDb.server, async (error, client) => {
-                    if (error) {
-                        res.generatedBaseContent.error = {
-                            code: 1001,
-                            message: "Cannot connect to database. Please, try later!",
-                            errorRes: {
-                                name: error.name,
-                                message: error.message
-                            }
-                        };
-            
-                        res.generatedBaseContent.timeStatus.serverTime = Date.now() / 1000.0;
-                        res.generatedBaseContent.timeStatus.generatedFor = (Date.now() / 1000.0) - req.startTime;
-            
-                        client.close()
-                        return res.status(500).send(res.generatedBaseContent);
-                    }
-                    
                     const collection = client.db(configuration.mongoDb.db).collection("users");
                     const user = await collection.findOne({ email: authorizationInfo[0] })
 
@@ -158,10 +132,10 @@ app.use("/private/", async (req, res, next) => {
                                     message: null
                                 }
                             };
-                
+
                             res.generatedBaseContent.timeStatus.serverTime = Date.now() / 1000.0;
                             res.generatedBaseContent.timeStatus.generatedFor = (Date.now() / 1000.0) - req.startTime;
-                
+
                             client.close()
                             return res.status(500).send(res.generatedBaseContent);
                         }
@@ -174,12 +148,12 @@ app.use("/private/", async (req, res, next) => {
                                 message: null
                             }
                         };
-                        
+
                         res.generatedBaseContent.requestInfo.authorization = false;
 
                         res.generatedBaseContent.timeStatus.serverTime = Date.now() / 1000.0;
                         res.generatedBaseContent.timeStatus.generatedFor = (Date.now() / 1000.0) - req.startTime;
-            
+
                         client.close()
                         return res.status(401).send(res.generatedBaseContent);
                     }
@@ -200,25 +174,8 @@ app.use("/private/", async (req, res, next) => {
                 break;
             case "JWT":
                 var authorization = req.headers["authorization"].split(" ")[1];
-                
+
                 MongoClient.connect(configuration.mongoDb.server, async (error, client) => {
-                    if (error) {
-                        res.generatedBaseContent.error = {
-                            code: 1001,
-                            message: "Cannot connect to database. Please, try later!",
-                            errorRes: {
-                                name: error.name,
-                                message: error.message
-                            }
-                        };
-            
-                        res.generatedBaseContent.timeStatus.serverTime = Date.now() / 1000.0;
-                        res.generatedBaseContent.timeStatus.generatedFor = (Date.now() / 1000.0) - req.startTime;
-            
-                        client.close()
-                        return res.status(500).send(res.generatedBaseContent);
-                    }
-                    
                     const collection = client.db(configuration.mongoDb.db).collection("users");
 
                     try {
@@ -233,12 +190,12 @@ app.use("/private/", async (req, res, next) => {
                                     message: null
                                 }
                             };
-                            
+
                             res.generatedBaseContent.requestInfo.authorization = false;
-    
+
                             res.generatedBaseContent.timeStatus.serverTime = Date.now() / 1000.0;
                             res.generatedBaseContent.timeStatus.generatedFor = (Date.now() / 1000.0) - req.startTime;
-                
+
                             client.close()
                             return res.status(401).send(res.generatedBaseContent);
                         }
@@ -251,12 +208,12 @@ app.use("/private/", async (req, res, next) => {
                                     message: null
                                 }
                             };
-                            
+
                             res.generatedBaseContent.requestInfo.authorization = false;
-    
+
                             res.generatedBaseContent.timeStatus.serverTime = Date.now() / 1000.0;
                             res.generatedBaseContent.timeStatus.generatedFor = (Date.now() / 1000.0) - req.startTime;
-                
+
                             client.close()
                             return res.status(401).send(res.generatedBaseContent);
                         }
@@ -268,7 +225,7 @@ app.use("/private/", async (req, res, next) => {
 
                         client.close();
                         next()
-                    } catch(error) {
+                    } catch (error) {
                         res.generatedBaseContent.error = {
                             code: 1200,
                             message: "Invaild authorization token",
@@ -277,19 +234,19 @@ app.use("/private/", async (req, res, next) => {
                                 message: null
                             }
                         };
-                        
+
                         res.generatedBaseContent.requestInfo.authorization = false;
 
                         res.generatedBaseContent.timeStatus.serverTime = Date.now() / 1000.0;
                         res.generatedBaseContent.timeStatus.generatedFor = (Date.now() / 1000.0) - req.startTime;
-            
+
                         client.close()
                         return res.status(401).send(res.generatedBaseContent);
                     }
                 })
                 break;
         }
-    } catch(error) {
+    } catch (error) {
         res.generatedBaseContent.error = {
             code: 1005,
             message: "Authorization required",
@@ -305,7 +262,8 @@ app.use("/private/", async (req, res, next) => {
         res.generatedBaseContent.timeStatus.generatedFor = (Date.now() / 1000.0) - req.startTime;
 
         res.status(401).send(res.generatedBaseContent);
-}})
+    }
+})
 
 app.use("/private/", async (req, res, next) => {
     for (let i = 0; i < onlineUsers; i++) {
@@ -317,78 +275,199 @@ app.use("/private/", async (req, res, next) => {
 })
 
 app.get("/private/ping", async (req, res) => {
-        MongoClient.connect(configuration.mongoDb.server, async (error, client) => {
-            if (error) {
-                res.generatedBaseContent.error = {
-                    code: 1001,
-                    message: "Cannot connect to database. Please, try later!",
-                    errorRes: {
-                        name: error.name,
-                        message: error.message
-                    }
-                };
-    
-                res.generatedBaseContent.timeStatus.serverTime = Date.now() / 1000.0;
-                res.generatedBaseContent.timeStatus.generatedFor = (Date.now() / 1000.0) - req.startTime;
-    
-                client.close()
-                return res.status(500).send(res.generatedBaseContent);
-            }
-            
-            const collection = client.db(configuration.mongoDb.db).collection("users");
-            const user = await collection.findOne({ email: req.email })
+    MongoClient.connect(configuration.mongoDb.server, async (error, client) => {
+        const collection = client.db(configuration.mongoDb.db).collection("users");
+        const user = await collection.findOne({ email: req.email })
 
-            if (user) {
-                let exists;
-                for (let i = 0; i < onlineUsers.length; i++) {
-                    if (onlineUsers[i].email == req.email && onlineUsers[i].password == req.password) {
-                        onlineUsers[i].lastRequestTime = Date.now();
-                        exists = true;
-                        break;
-                    }
+        if (user) {
+            let exists;
+            for (let i = 0; i < onlineUsers.length; i++) {
+                if (onlineUsers[i].email == req.email && onlineUsers[i].password == req.password) {
+                    onlineUsers[i].lastRequestTime = Date.now();
+                    exists = true;
+                    break;
                 }
-                if (exists != true) {
-                    onlineUsers.push({
-                        email: req.email,
-                        password: req.password,
-                        lastRequestTime: Date.now()
-                    })
-                }
-
-                res.generatedBaseContent.timeStatus.serverTime = Date.now() / 1000.0;
-                res.generatedBaseContent.timeStatus.generatedFor = (Date.now() / 1000.0) - req.startTime;
-
-                res.send(res.generatedBaseContent);
-            } else {
-                res.generatedBaseContent.error = {
-                    code: 1500,
-                    message: "User is not registered",
-                    errorRes: {
-                        name: null,
-                        message: null
-                    }
-                };
-    
-                res.generatedBaseContent.timeStatus.serverTime = Date.now() / 1000.0;
-                res.generatedBaseContent.timeStatus.generatedFor = (Date.now() / 1000.0) - req.startTime;
-    
-                client.close()
-                return res.status(500).send(res.generatedBaseContent);
             }
-        })
+            if (exists != true) {
+                onlineUsers.push({
+                    email: req.email,
+                    password: req.password,
+                    lastRequestTime: Date.now()
+                })
+            }
+
+            res.generatedBaseContent.timeStatus.serverTime = Date.now() / 1000.0;
+            res.generatedBaseContent.timeStatus.generatedFor = (Date.now() / 1000.0) - req.startTime;
+
+            res.send(res.generatedBaseContent);
+        } else {
+            res.generatedBaseContent.error = {
+                code: 1500,
+                message: "User is not registered",
+                errorRes: {
+                    name: null,
+                    message: null
+                }
+            };
+
+            res.generatedBaseContent.timeStatus.serverTime = Date.now() / 1000.0;
+            res.generatedBaseContent.timeStatus.generatedFor = (Date.now() / 1000.0) - req.startTime;
+
+            client.close()
+            return res.status(500).send(res.generatedBaseContent);
+        }
+    })
 })
 
 app.route("/private/user")
-   .get(async (req, res) => {})
-   .post(async (req, res) => {})
-   .put(async (req, res) => {})
-   .patch(async (req, res) => {})
-   .delete(async (req, res) => {})
+    .get(async (req, res) => {
+        switch (req.query.q) {
+            case "getUsers":
+                MongoClient.connect(configuration.mongoDb.server, async (error, client) => {
+                    const collection = client.db(configuration.mongoDb.db).collection("users");
+                    for await (var _id of req.query._ids.split(",")) {
+                        const user = await collection.findOne({ _id: new ObjectId(_id) }, { projection: { password: false } })
+                        res.generatedBaseContent.contents.push(user)
+                    }
+                    res.generatedBaseContent.timeStatus.serverTime = Date.now() / 1000.0;
+                    res.generatedBaseContent.timeStatus.generatedFor = (Date.now() / 1000.0) - req.startTime;
+                    res.send(res.generatedBaseContent);
+                })
+                break;
+            case "getCurrentUser":
+                MongoClient.connect(configuration.mongoDb.server, async (error, client) => {
+                    const collection = client.db(configuration.mongoDb.db).collection("users");
+                    const user = await collection.findOne({ email: req.email }, { projection: { password: false } })
+                    res.generatedBaseContent.contents.push(user)
+                    res.generatedBaseContent.timeStatus.serverTime = Date.now() / 1000.0;
+                    res.generatedBaseContent.timeStatus.generatedFor = (Date.now() / 1000.0) - req.startTime;
+                    res.send(res.generatedBaseContent);
+                })
+                break;
+            default:
+                res.generatedBaseContent.timeStatus.serverTime = Date.now() / 1000.0;
+                res.generatedBaseContent.timeStatus.generatedFor = (Date.now() / 1000.0) - req.startTime;
+                res.status(404).send(res.generatedBaseContent);
+                break;
+        }
+    })
+    .patch(async (req, res) => {
+        switch (req.query.q) {
+            case "updateCurrentUser":
+                // removing this for secruity
+                req.body.email = undefined;
+                req.body.password = undefined;
+                req.body.contents = undefined;
+
+                MongoClient.connect(configuration.mongoDb.server, async (error, client) => {
+                    const collection = client.db(configuration.mongoDb.db).collection("users");
+                    const command = await collection.findOneAndUpdate({ email: req.email }, { $set: req.body })
+                    
+                    res.generatedBaseContent.timeStatus.serverTime = Date.now() / 1000.0;
+                    res.generatedBaseContent.timeStatus.generatedFor = (Date.now() / 1000.0) - req.startTime;
+                    
+                    res.send(res.generatedBaseContent);
+                })
+                break;
+            case "updatePassword":
+                var password = await bcrypt.hash(req.query.new, 6);
+                MongoClient.connect(configuration.mongoDb.server, async (error, client) => {
+                    const collection = client.db(configuration.mongoDb.db).collection("users");
+                    const command = await collection.findOneAndUpdate({ email: req.email }, { $set: { password: password } })
+                    
+                    res.generatedBaseContent.requestInfo.generatedJWTtoken = jwt.sign({
+                        email: req.email,
+                        password: password,
+                        expiration: Date.now() + 10800000 // 3 hours will works
+                    }, configuration.key)
+
+                    res.generatedBaseContent.timeStatus.serverTime = Date.now() / 1000.0;
+                    res.generatedBaseContent.timeStatus.generatedFor = (Date.now() / 1000.0) - req.startTime;
+                    
+                    res.send(res.generatedBaseContent);
+                })
+                break;
+            case "updateEmail":
+                MongoClient.connect(configuration.mongoDb.server, async (error, client) => {
+                    const collection = client.db(configuration.mongoDb.db).collection("users");
+                    const command = await collection.findOneAndUpdate({ email: req.email }, { $set: { email: req.query.new } })
+                    
+                    res.generatedBaseContent.requestInfo.generatedJWTtoken = jwt.sign({
+                        email: req.query.new,
+                        password: req.password,
+                        expiration: Date.now() + 10800000 // 3 hours will works
+                    }, configuration.key)
+
+                    res.generatedBaseContent.timeStatus.serverTime = Date.now() / 1000.0;
+                    res.generatedBaseContent.timeStatus.generatedFor = (Date.now() / 1000.0) - req.startTime;
+                        
+                    res.send(res.generatedBaseContent);
+                })
+                break;
+            default:
+                res.generatedBaseContent.timeStatus.serverTime = Date.now() / 1000.0;
+                res.generatedBaseContent.timeStatus.generatedFor = (Date.now() / 1000.0) - req.startTime;
+                res.status(404).send(res.generatedBaseContent);
+                break;
+        }
+    })
+    .delete(async (req, res) => {
+        switch (req.query.q) {
+            case "deleteCurrentUser":
+                MongoClient.connect(configuration.mongoDb.server, async (error, client) => {
+                    const collection = client.db(configuration.mongoDb.db).collection("users");
+                    const command = await collection.findOneAndReplace({ email: req.email }, { $set: { deleted: true } })
+                    
+                    res.generatedBaseContent.timeStatus.serverTime = Date.now() / 1000.0;
+                    res.generatedBaseContent.timeStatus.generatedFor = (Date.now() / 1000.0) - req.startTime;
+                    
+                    res.send(res.generatedBaseContent);
+                })
+                break;
+            default:
+                res.generatedBaseContent.timeStatus.serverTime = Date.now() / 1000.0;
+                res.generatedBaseContent.timeStatus.generatedFor = (Date.now() / 1000.0) - req.startTime;
+                res.status(404).send(res.generatedBaseContent);
+                break;
+        }
+    })
 
 app.route("/private/content")
-   .get(async (req, res) => {})
-   .post(async (req, res) => {})
-   .patch(async (req, res) => {})
-   .delete(async (req, res) => {})
+    .get(async (req, res) => { 
+        switch (req.query.q) {
+            case "getPublicArchives":
+                MongoClient.connect(configuration.mongoDb.server, async (error, client) => {
+                    const collection = client.db(configuration.mongoDb.db).collection("content");
+                    for await (var _id of req.query._ids.split(",")) {
+                        const content = await collection.findOne({ _id: new ObjectId(_id), status: "VERIFIED_OK", public: true })
+                        if (content) {
+                            // digitalocean spaces api shit
+                            // but here placeholder temporary
+                            res.generatedBaseContent.contents.push({
+                                "downloadLink": null,
+                                "expiresIn": null
+                            })
+                        } else {
+                            res.generatedBaseContent.contents.push({
+                                "downloadLink": null,
+                                "expiresIn": null
+                            })
+                        }
+                    }
+                    res.generatedBaseContent.timeStatus.serverTime = Date.now() / 1000.0;
+                    res.generatedBaseContent.timeStatus.generatedFor = (Date.now() / 1000.0) - req.startTime;
+                    res.send(res.generatedBaseContent);
+                })
+                break;
+            default:
+                res.generatedBaseContent.timeStatus.serverTime = Date.now() / 1000.0;
+                res.generatedBaseContent.timeStatus.generatedFor = (Date.now() / 1000.0) - req.startTime;
+                res.status(404).send(res.generatedBaseContent);
+                break;
+        }
+    })
+    .post(async (req, res) => { })
+    .patch(async (req, res) => { })
+    .delete(async (req, res) => { })
 
 app.listen(3000);
