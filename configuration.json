@@ -3,8 +3,5 @@
         "server": "",
         "db": "soapie"
     },
-    "keys": {
-        "public": "",
-        "private": ""
-    }
+    "key": ""
 }
