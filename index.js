@@ -6,14 +6,14 @@ var app = require("express")(),
 
 // online users
 const onlineUsers = [];
-let requestIds = 1;
+let requestId = 1;
 
 app.use(require("express").json())
     .use(require('nocache')())
     .use(async (req, res, next) => {
         req.startTime = Date.now() / 1000.0;
         res.generatedBaseContent = {
-            api: req.url.split("/")[1],
+            api: req.url.split("/")[2],
             contents: [],
             timeStatus: {
                 startTime: req.startTime
@@ -158,14 +158,12 @@ app.use("/private/", async (req, res, next) => {
                                     message: null
                                 }
                             };
-                            
-                            res.generatedBaseContent.requestInfo.authorization = false;
-    
+                
                             res.generatedBaseContent.timeStatus.serverTime = Date.now() / 1000.0;
                             res.generatedBaseContent.timeStatus.generatedFor = (Date.now() / 1000.0) - req.startTime;
                 
                             client.close()
-                            return res.status(401).send(res.generatedBaseContent);
+                            return res.status(500).send(res.generatedBaseContent);
                         }
                     } else {
                         res.generatedBaseContent.error = {
@@ -186,15 +184,20 @@ app.use("/private/", async (req, res, next) => {
                         return res.status(401).send(res.generatedBaseContent);
                     }
 
+                    req.email = user.email;
+                    req.password = user.password;
+
                     res.generatedBaseContent.requestInfo.authorization = true;
                     res.generatedBaseContent.requestInfo.generatedJWTtoken = jwt.sign({
                         email: authorizationInfo[0],
+                        password: user.password,
                         expiration: Date.now() + 10800000 // 3 hours will works
-                    }, configuration.keys.public)
+                    }, configuration.key)
 
                     client.close();
                     next()
                 })
+                break;
             case "JWT":
                 var authorization = req.headers["authorization"].split(" ")[1];
                 
@@ -217,8 +220,9 @@ app.use("/private/", async (req, res, next) => {
                     }
                     
                     const collection = client.db(configuration.mongoDb.db).collection("users");
+
                     try {
-                        const token = await jwt.verify(authorization, configuration.keys.private);
+                        const token = await jwt.verify(authorization, configuration.key);
                         const user = await collection.findOne({ email: token.email })
                         if (token.expiration < Date.now()) {
                             res.generatedBaseContent.error = {
@@ -256,6 +260,14 @@ app.use("/private/", async (req, res, next) => {
                             client.close()
                             return res.status(401).send(res.generatedBaseContent);
                         }
+
+                        req.email = token.email;
+                        req.password = token.password;
+
+                        res.generatedBaseContent.requestInfo.authorization = true;
+
+                        client.close();
+                        next()
                     } catch(error) {
                         res.generatedBaseContent.error = {
                             code: 1200,
@@ -274,12 +286,8 @@ app.use("/private/", async (req, res, next) => {
                         client.close()
                         return res.status(401).send(res.generatedBaseContent);
                     }
-
-                    res.generatedBaseContent.requestInfo.authorization = true;
-
-                    client.close();
-                    next()
                 })
+                break;
         }
     } catch(error) {
         res.generatedBaseContent.error = {
@@ -297,12 +305,90 @@ app.use("/private/", async (req, res, next) => {
         res.generatedBaseContent.timeStatus.generatedFor = (Date.now() / 1000.0) - req.startTime;
 
         res.status(401).send(res.generatedBaseContent);
+}})
+
+app.use("/private/", async (req, res, next) => {
+    for (let i = 0; i < onlineUsers; i++) {
+        if (onlineUsers[i].lastRequestTime - Date.now() > 300000) {
+            onlineUsers.pop(i);
+        }
     }
+    next();
 })
 
-// TODO: make this
+app.get("/private/ping", async (req, res) => {
+        MongoClient.connect(configuration.mongoDb.server, async (error, client) => {
+            if (error) {
+                res.generatedBaseContent.error = {
+                    code: 1001,
+                    message: "Cannot connect to database. Please, try later!",
+                    errorRes: {
+                        name: error.name,
+                        message: error.message
+                    }
+                };
+    
+                res.generatedBaseContent.timeStatus.serverTime = Date.now() / 1000.0;
+                res.generatedBaseContent.timeStatus.generatedFor = (Date.now() / 1000.0) - req.startTime;
+    
+                client.close()
+                return res.status(500).send(res.generatedBaseContent);
+            }
+            
+            const collection = client.db(configuration.mongoDb.db).collection("users");
+            const user = await collection.findOne({ email: req.email })
+
+            if (user) {
+                let exists;
+                for (let i = 0; i < onlineUsers.length; i++) {
+                    if (onlineUsers[i].email == req.email && onlineUsers[i].password == req.password) {
+                        onlineUsers[i].lastRequestTime = Date.now();
+                        exists = true;
+                        break;
+                    }
+                }
+                if (exists != true) {
+                    onlineUsers.push({
+                        email: req.email,
+                        password: req.password,
+                        lastRequestTime: Date.now()
+                    })
+                }
+
+                res.generatedBaseContent.timeStatus.serverTime = Date.now() / 1000.0;
+                res.generatedBaseContent.timeStatus.generatedFor = (Date.now() / 1000.0) - req.startTime;
+
+                res.send(res.generatedBaseContent);
+            } else {
+                res.generatedBaseContent.error = {
+                    code: 1500,
+                    message: "User is not registered",
+                    errorRes: {
+                        name: null,
+                        message: null
+                    }
+                };
+    
+                res.generatedBaseContent.timeStatus.serverTime = Date.now() / 1000.0;
+                res.generatedBaseContent.timeStatus.generatedFor = (Date.now() / 1000.0) - req.startTime;
+    
+                client.close()
+                return res.status(500).send(res.generatedBaseContent);
+            }
+        })
+})
+
 app.route("/private/user")
-app.route("/private/comment")
+   .get(async (req, res) => {})
+   .post(async (req, res) => {})
+   .put(async (req, res) => {})
+   .patch(async (req, res) => {})
+   .delete(async (req, res) => {})
+
 app.route("/private/content")
+   .get(async (req, res) => {})
+   .post(async (req, res) => {})
+   .patch(async (req, res) => {})
+   .delete(async (req, res) => {})
 
 app.listen(3000);
